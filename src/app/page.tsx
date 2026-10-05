@@ -511,7 +511,7 @@ export default function LavaRapidoFerreiraPage() {
               </TabsContent>
 
               <TabsContent value="clientes">
-                <Clientes clientes={clientes} comandas={comandas} onRegistrarCliente={registrarCliente} onEditarCliente={editarCliente} onExcluirCliente={excluirCliente} obterFidelidade={obterFidelidadeHook} onAjustarPontos={ajustarPontosFidelidadeHook} onAjustarLavagensGratis={ajustarLavagensGratisHook} />
+                <Clientes comandas={comandas} onRegistrarCliente={registrarCliente} onEditarCliente={editarCliente} onExcluirCliente={excluirCliente} obterFidelidade={obterFidelidadeHook} onAjustarPontos={ajustarPontosFidelidadeHook} onAjustarLavagensGratis={ajustarLavagensGratisHook} />
               </TabsContent>
 
               <TabsContent value="produtos">

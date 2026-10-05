@@ -131,6 +131,126 @@ export async function deleteCliente(id: string): Promise<boolean> {
 }
 
 // ============================================================
+//  CLIENTES — PAGINAÇÃO + BUSCA SERVER-SIDE
+// ============================================================
+
+/** Escapa caracteres especiais do ilike (% _ \) */
+function escapeIlike(str: string): string {
+  return str.replace(/[%_\\]/g, '\\$&');
+}
+
+/** Normaliza placa: remove hífens e espaços, converte para maiúsculas */
+export function normalizarPlaca(str: string): string {
+  return str.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Constrói filtro .or() para busca server-side de clientes.
+ * Busca por: nome, telefone, placa, veículo.
+ * Para placa, também busca a versão normalizada (sem hífen) e com hífen inserido.
+ */
+function buildClienteSearchFilter(termo: string): string {
+  const escaped = escapeIlike(termo);
+  const conditions = [
+    `nome.ilike.%${escaped}%`,
+    `telefone.ilike.%${escaped}%`,
+    `veiculo.ilike.%${escaped}%`,
+    `placa.ilike.%${escaped}%`,
+  ];
+
+  // Normalizar placa (remover hífens/espaços, maiúsculas)
+  const placaNorm = normalizarPlaca(termo);
+  const escapedNorm = escapeIlike(placaNorm);
+
+  // Se a versão normalizada difere do termo original, também buscar por ela
+  if (escapedNorm.toLowerCase() !== escaped.toLowerCase()) {
+    conditions.push(`placa.ilike.%${escapedNorm}%`);
+  }
+
+  // Tentar inserir hífen após 3º caractere (formato brasileiro ABC-1234 / ABC-1D23)
+  if (placaNorm.length >= 4 && placaNorm.length <= 7) {
+    const withHyphen = placaNorm.slice(0, 3) + '-' + placaNorm.slice(3);
+    const escapedHyphen = escapeIlike(withHyphen);
+    if (!conditions.includes(`placa.ilike.%${escapedHyphen}%`)) {
+      conditions.push(`placa.ilike.%${escapedHyphen}%`);
+    }
+  }
+
+  return conditions.join(',');
+}
+
+/**
+ * Busca clientes com paginação real via Supabase.
+ * Usa .range() para paginar e count: "exact" para obter o total real.
+ * Se searchTerm for fornecido, aplica filtro server-side com .or().
+ */
+export async function fetchClientesPaginado(
+  page: number,
+  pageSize: number,
+  searchTerm?: string
+): Promise<{ data: Cliente[]; total: number }> {
+  const sb = getSupabaseClient();
+  if (!sb) return { data: [], total: 0 };
+
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = sb
+    .from("clientes")
+    .select("*", { count: "exact" })
+    .order("nome")
+    .range(from, to);
+
+  if (searchTerm && searchTerm.trim()) {
+    const filter = buildClienteSearchFilter(searchTerm.trim());
+    query = query.or(filter);
+  }
+
+  const { data, count, error } = await query;
+
+  if (error) {
+    console.error("Erro ao buscar clientes paginado:", error.message);
+    return { data: [], total: 0 };
+  }
+
+  return {
+    data: (data || []).map(rowToCliente),
+    total: count || 0,
+  };
+}
+
+/**
+ * Busca clientes server-side para o dropdown de Nova Entrada.
+ * Não pagina — retorna até `limit` resultados direto do Supabase.
+ */
+export async function buscarClientesServerSide(
+  termo: string,
+  limit: number = 20
+): Promise<Cliente[]> {
+  const sb = getSupabaseClient();
+  if (!sb) return [];
+
+  const t = termo.trim();
+  if (!t || t.length < 2) return [];
+
+  const filter = buildClienteSearchFilter(t);
+
+  const { data, error } = await sb
+    .from("clientes")
+    .select("*")
+    .or(filter)
+    .order("nome")
+    .limit(limit);
+
+  if (error) {
+    console.error("Erro ao buscar clientes server-side:", error.message);
+    return [];
+  }
+
+  return (data || []).map(rowToCliente);
+}
+
+// ============================================================
 //  PRODUTOS
 // ============================================================
 

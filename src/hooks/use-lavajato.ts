@@ -64,6 +64,8 @@ import {
   fetchTodosConsumosMensalistas,
   insertConsumoMensalista as sbInsertConsumoMensalista,
   deleteConsumoMensalista as sbDeleteConsumoMensalista,
+  buscarClientesServerSide,
+  normalizarPlaca,
 } from "@/lib/supabase-service";
 import { getSupabaseClient } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -543,28 +545,28 @@ export function useLavaJato() {
   );
 
   // ===== BUSCA UNIFICADA PARA NOVA ENTRADA (clientes + mensalistas) =====
+  // Busca ASYNC: clientes via server-side Supabase, mensalistas via estado local
   const buscarParaEntrada = useCallback(
-    (termo: string): ResultadoBuscaEntrada[] => {
-      const t = termo.toLowerCase().trim();
+    async (termo: string): Promise<ResultadoBuscaEntrada[]> => {
+      const t = termo.trim();
       if (!t || t.length < 2) return [];
 
-      // Buscar clientes normais
-      const resultadosClientes: ResultadoBuscaEntrada[] = clientes
-        .filter(
-          (c) =>
-            c.nome.toLowerCase().includes(t) ||
-            c.placa.toLowerCase().includes(t) ||
-            c.veiculo.toLowerCase().includes(t)
-        )
-        .map((c) => ({ cliente: c, origem: "cliente" as const }));
+      // Buscar clientes no Supabase (server-side) — não depende de clientes carregados
+      const clientesEncontrados = await buscarClientesServerSide(t, 20);
+      const resultadosClientes: ResultadoBuscaEntrada[] = clientesEncontrados.map(
+        (c) => ({ cliente: c, origem: "cliente" as const })
+      );
 
-      // Buscar mensalistas (convertendo para formato Cliente)
+      // Buscar mensalistas via estado local (convertendo para formato Cliente)
+      const tLower = t.toLowerCase();
+      const tNorm = normalizarPlaca(t);
       const resultadosMensalistas: ResultadoBuscaEntrada[] = mensalistas
         .filter(
           (m) =>
-            m.nome.toLowerCase().includes(t) ||
-            m.placa.toLowerCase().includes(t) ||
-            m.veiculo.toLowerCase().includes(t)
+            m.nome.toLowerCase().includes(tLower) ||
+            m.placa.toLowerCase().includes(tLower) ||
+            normalizarPlaca(m.placa).includes(tNorm) ||
+            m.veiculo.toLowerCase().includes(tLower)
         )
         .map((m) => ({
           cliente: {
@@ -580,7 +582,7 @@ export function useLavaJato() {
 
       return [...resultadosClientes, ...resultadosMensalistas];
     },
-    [clientes, mensalistas]
+    [mensalistas]
   );
 
   const registrarCliente = useCallback(

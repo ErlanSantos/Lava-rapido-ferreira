@@ -1,7 +1,7 @@
 "use client";
 
 // Componente: Formulário de nova entrada de veículo
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Search,
   Plus,
@@ -39,7 +39,7 @@ import {
 import { toast } from "sonner";
 
 interface NovaEntradaProps {
-  buscarParaEntrada: (termo: string) => ResultadoBuscaEntrada[];
+  buscarParaEntrada: (termo: string) => Promise<ResultadoBuscaEntrada[]>;
   registrarCliente: (cliente: Cliente) => Promise<Cliente>;
   criarComanda: (dados: {
     cliente: Cliente;
@@ -65,11 +65,29 @@ export function NovaEntrada({
   // Estado do formulário
   const [termoBusca, setTermoBusca] = useState("");
   const [mostrarResultados, setMostrarResultados] = useState(false);
+  const [resultadosBusca, setResultadosBusca] = useState<ResultadoBuscaEntrada[]>([]);
+  const [buscaEmAndamento, setBuscaEmAndamento] = useState(false);
 
-  // Resultados de busca unificados (clientes + mensalistas)
-  const resultadosBusca = useMemo(() => {
-    if (termoBusca.length < 2) return [];
-    return buscarParaEntrada(termoBusca);
+  // Busca async com debounce
+  useEffect(() => {
+    if (termoBusca.length < 2) {
+      setResultadosBusca([]);
+      setBuscaEmAndamento(false);
+      return;
+    }
+    setBuscaEmAndamento(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const resultados = await buscarParaEntrada(termoBusca);
+        setResultadosBusca(resultados);
+      } catch (err) {
+        console.error("Erro na busca:", err);
+        setResultadosBusca([]);
+      } finally {
+        setBuscaEmAndamento(false);
+      }
+    }, 300);
+    return () => clearTimeout(timeout);
   }, [termoBusca, buscarParaEntrada]);
 
   // Mostrar resultados quando a busca retorna resultados
@@ -292,7 +310,12 @@ export function NovaEntrada({
                   autoComplete="off"
                 />
               </div>
-              {deveMostrarResultados && resultadosBusca.length > 0 && (
+              {deveMostrarResultados && buscaEmAndamento && (
+                  <div className="absolute z-20 w-full mt-1 bg-popover border rounded-lg shadow-lg p-3 text-center text-sm text-muted-foreground">
+                    Buscando...
+                  </div>
+                )}
+              {deveMostrarResultados && !buscaEmAndamento && resultadosBusca.length > 0 && (
                 <div className="absolute z-20 w-full mt-1 bg-popover border rounded-lg shadow-lg max-h-60 overflow-y-auto custom-scrollbar">
                   {resultadosBusca.map((resultado) => {
                     const { cliente: c, origem } = resultado;
@@ -336,7 +359,7 @@ export function NovaEntrada({
                   })}
                 </div>
               )}
-              {deveMostrarResultados && resultadosBusca.length === 0 && (
+              {deveMostrarResultados && !buscaEmAndamento && resultadosBusca.length === 0 && (
                   <div className="absolute z-20 w-full mt-1 bg-popover border rounded-lg shadow-lg p-3 text-center text-sm text-muted-foreground">
                     Nenhum resultado encontrado
                   </div>
